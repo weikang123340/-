@@ -1,19 +1,19 @@
 
 {
-  "name": "Express Station Pro",
-  "short_name": "StationPro",
+  "name": "OrangePace Calculator",
+  "short_name": "OrangePace",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0f172a",
-  "theme_color": "#0f172a",
+  "background_color": "#fff7ed",
+  "theme_color": "#f97316",
   "icons": [
     {
-      "src": "https://api.dicebear.com/7.x/shapes/svg?seed=EP&backgroundColor=0f172a",
+      "src": "https://api.dicebear.com/7.x/icons/svg?seed=Run&backgroundColor=f97316",
       "sizes": "192x192",
       "type": "image/svg+xml"
     },
     {
-      "src": "https://api.dicebear.com/7.x/shapes/svg?seed=EP&backgroundColor=0f172a",
+      "src": "https://api.dicebear.com/7.x/icons/svg?seed=Run&backgroundColor=f97316",
       "sizes": "512x512",
       "type": "image/svg+xml"
     }

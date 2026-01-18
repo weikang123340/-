@@ -1,7 +1,5 @@
 {
-  "name": "Express Station Pro",
-  "description": "A high-efficiency inbound and outbound logistics management system for express stations with AI-powered analytics.",
-  "requestFramePermissions": [
-    "camera"
-  ]
+  "name": "OrangePace - Run Calculator",
+  "description": "A professional running pace calculator with an energetic orange theme. Calculate pace, time, or distance easily.",
+  "requestFramePermissions": []
 }
