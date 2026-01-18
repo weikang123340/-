@@ -9,6 +9,7 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'inbound' | 'outbound' | 'inventory'>('dashboard');
   const [searchQuery, setSearchQuery] = useState('');
   const [aiAnalysis, setAiAnalysis] = useState('加载AI经营建议...');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
   // Form States
   const [inboundForm, setInboundForm] = useState({
@@ -62,6 +63,7 @@ const App: React.FC = () => {
     setPackages([newPackage, ...packages]);
     setInboundForm({ ...inboundForm, trackingNumber: '', recipientPhone: '', recipientName: '' });
     alert('入库成功！位置: ' + newPackage.shelfLocation);
+    // Optional: Close menu on mobile after action if it was a nav action, keeping form open for continuous scanning
   };
 
   const handlePickup = (id: string) => {
@@ -77,10 +79,23 @@ const App: React.FC = () => {
   );
 
   return (
-    <div className="flex h-screen bg-slate-50 overflow-hidden font-sans text-slate-900">
-      {/* Sidebar */}
-      <nav className="w-64 bg-slate-900 text-white flex flex-col shadow-xl">
-        <div className="p-6 border-b border-slate-800">
+    <div className="flex h-screen bg-slate-50 overflow-hidden font-sans text-slate-900 relative">
+      
+      {/* Mobile Menu Overlay */}
+      {isMobileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden backdrop-blur-sm transition-opacity"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
+      {/* Sidebar - Responsive */}
+      <nav className={`
+        fixed lg:static inset-y-0 left-0 z-50 w-64 bg-slate-900 text-white flex flex-col shadow-xl 
+        transform transition-transform duration-300 ease-in-out
+        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+      `}>
+        <div className="p-6 border-b border-slate-800 flex justify-between items-center">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center font-bold text-xl">
               EP
@@ -90,8 +105,12 @@ const App: React.FC = () => {
               <span className="text-slate-500 text-xs">Express Station</span>
             </div>
           </div>
+          {/* Close button for mobile */}
+          <button onClick={() => setIsMobileMenuOpen(false)} className="lg:hidden text-slate-400 hover:text-white">
+            ✕
+          </button>
         </div>
-        <div className="flex-1 py-6 space-y-1">
+        <div className="flex-1 py-6 space-y-1 overflow-y-auto">
           {[
             { id: 'dashboard', label: '工作台', icon: '📊' },
             { id: 'inbound', label: '扫码入库', icon: '📥' },
@@ -100,17 +119,20 @@ const App: React.FC = () => {
           ].map(item => (
             <button
               key={item.id}
-              onClick={() => setActiveTab(item.id as any)}
+              onClick={() => {
+                setActiveTab(item.id as any);
+                setIsMobileMenuOpen(false);
+              }}
               className={`w-full flex items-center gap-4 px-6 py-4 text-left transition-colors ${
                 activeTab === item.id ? 'bg-blue-600 text-white border-r-4 border-white' : 'text-slate-400 hover:bg-slate-800'
               }`}
             >
-              <span>{item.icon}</span>
+              <span className="text-xl">{item.icon}</span>
               <span className="font-medium">{item.label}</span>
             </button>
           ))}
         </div>
-        <div className="p-6 border-t border-slate-800">
+        <div className="p-6 border-t border-slate-800 safe-area-bottom">
           <div className="bg-slate-800/50 rounded-lg p-3">
             <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-1">Station ID</p>
             <p className="text-sm font-mono text-blue-400">#ST_PUXI_0821</p>
@@ -119,34 +141,43 @@ const App: React.FC = () => {
       </nav>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto p-8">
-        <header className="flex justify-between items-center mb-8">
-          <div>
-            <h2 className="text-2xl font-bold">
-              {activeTab === 'dashboard' && '数字化大屏'}
-              {activeTab === 'inbound' && '快件入库登记'}
-              {activeTab === 'outbound' && '快件出库受理'}
-              {activeTab === 'inventory' && '实时库存管理'}
-            </h2>
-            <p className="text-slate-500 text-sm mt-1">
-              {new Date().toLocaleDateString('zh-CN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-            </p>
-          </div>
+      <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8 w-full">
+        {/* Header - Responsive */}
+        <header className="flex flex-col md:flex-row md:justify-between md:items-center mb-6 gap-4">
           <div className="flex items-center gap-4">
-            <div className="relative">
+            <button 
+              onClick={() => setIsMobileMenuOpen(true)}
+              className="lg:hidden p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
+            </button>
+            <div>
+              <h2 className="text-xl md:text-2xl font-bold truncate">
+                {activeTab === 'dashboard' && '数字化大屏'}
+                {activeTab === 'inbound' && '快件入库登记'}
+                {activeTab === 'outbound' && '快件出库受理'}
+                {activeTab === 'inventory' && '实时库存管理'}
+              </h2>
+              <p className="text-slate-500 text-xs md:text-sm mt-1 hidden sm:block">
+                {new Date().toLocaleDateString('zh-CN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <div className="relative flex-1 md:flex-none">
               <input
                 type="text"
-                placeholder="搜索单号/手机/姓名"
-                className="pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-full text-sm w-64 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                placeholder="搜索..."
+                className="pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-full text-sm w-full md:w-64 focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-sm"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
               <span className="absolute left-3 top-2.5 text-slate-400">🔍</span>
             </div>
-            <button className="p-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors">
+            <button className="p-2 bg-white border border-slate-200 rounded-full hover:bg-slate-100 transition-colors shadow-sm">
               🔔
             </button>
-            <div className="w-10 h-10 rounded-full bg-blue-100 border-2 border-white overflow-hidden">
+            <div className="w-9 h-9 md:w-10 md:h-10 rounded-full bg-blue-100 border-2 border-white overflow-hidden shadow-sm shrink-0">
               <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Manager" alt="Avatar" />
             </div>
           </div>
@@ -154,17 +185,17 @@ const App: React.FC = () => {
 
         {/* Dashboard View */}
         {activeTab === 'dashboard' && (
-          <div className="space-y-8 animate-in fade-in duration-500">
+          <div className="space-y-6 animate-in fade-in duration-500 pb-20">
             {/* Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {[
                 { label: '今日入库', value: stats.totalInboundToday, sub: '较昨日 +12%', color: 'text-blue-600', bg: 'bg-blue-50' },
                 { label: '待取快件', value: stats.pendingPickup, sub: '占库容 ' + stats.shelfUtilization + '%', color: 'text-orange-600', bg: 'bg-orange-50' },
                 { label: '今日出库', value: stats.deliveredToday, sub: '签收率 ' + (stats.totalInboundToday > 0 ? Math.round((stats.deliveredToday / stats.totalInboundToday) * 100) : 0) + '%', color: 'text-emerald-600', bg: 'bg-emerald-50' },
                 { label: '站点状态', value: '正常', sub: '环境温度 24°C', color: 'text-indigo-600', bg: 'bg-indigo-50' }
               ].map((card, i) => (
-                <div key={i} className={`${card.bg} p-6 rounded-2xl border border-white shadow-sm`}>
-                  <p className="text-slate-500 text-sm font-medium">{card.label}</p>
+                <div key={i} className={`${card.bg} p-5 rounded-2xl border border-white shadow-sm`}>
+                  <p className="text-slate-500 text-xs font-bold uppercase tracking-wide">{card.label}</p>
                   <p className={`text-3xl font-bold mt-2 ${card.color}`}>{card.value}</p>
                   <p className="text-xs text-slate-400 mt-2 font-medium">{card.sub}</p>
                 </div>
@@ -172,8 +203,8 @@ const App: React.FC = () => {
             </div>
 
             {/* AI Insights */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-              <div className="flex items-center gap-2 mb-4">
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+              <div className="flex items-center gap-2 mb-3">
                 <span className="text-xl">✨</span>
                 <h3 className="font-bold text-slate-800">AI 智能经营分析</h3>
               </div>
@@ -182,25 +213,25 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            {/* Recent Activity */}
+            {/* Recent Activity - Mobile Optimized */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-              <div className="p-6 border-b border-slate-50 flex justify-between items-center">
+              <div className="p-5 border-b border-slate-50 flex justify-between items-center">
                 <h3 className="font-bold">最新动态</h3>
-                <button className="text-blue-600 text-sm font-medium">查看全部</button>
+                <button className="text-blue-600 text-xs font-bold bg-blue-50 px-3 py-1.5 rounded-full">全部</button>
               </div>
               <div className="divide-y divide-slate-50">
                 {packages.slice(0, 5).map(p => (
-                  <div key={p.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
-                    <div className="flex items-center gap-4">
-                      <div className={`w-2 h-2 rounded-full ${p.status === PackageStatus.ARRIVED ? 'bg-orange-400' : 'bg-emerald-400'}`} />
-                      <div>
-                        <p className="text-sm font-bold">{p.trackingNumber}</p>
-                        <p className="text-xs text-slate-500">{p.courierCompany} · {p.recipientName}</p>
+                  <div key={p.id} className="p-4 flex items-center justify-between active:bg-slate-50 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${p.status === PackageStatus.ARRIVED ? 'bg-orange-400' : 'bg-emerald-400'}`} />
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold truncate">{p.trackingNumber}</p>
+                        <p className="text-xs text-slate-500 truncate max-w-[120px] sm:max-w-none">{p.courierCompany} · {p.recipientName}</p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-xs font-mono bg-slate-100 px-2 py-1 rounded">{p.shelfLocation}</p>
-                      <p className="text-[10px] text-slate-400 mt-1">{new Date(p.inboundTime).toLocaleTimeString()}</p>
+                    <div className="text-right flex-shrink-0 ml-2">
+                      <p className="text-xs font-mono bg-slate-100 px-2 py-1 rounded inline-block">{p.shelfLocation}</p>
+                      <p className="text-[10px] text-slate-400 mt-1">{new Date(p.inboundTime).getHours()}:{String(new Date(p.inboundTime).getMinutes()).padStart(2,'0')}</p>
                     </div>
                   </div>
                 ))}
@@ -214,22 +245,26 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* Inbound Form View */}
+        {/* Inbound Form View - Mobile Friendly */}
         {activeTab === 'inbound' && (
-          <div className="max-w-4xl animate-in slide-in-from-bottom-4 duration-500">
+          <div className="max-w-4xl mx-auto animate-in slide-in-from-bottom-4 duration-500 pb-20">
             <form onSubmit={handleInbound} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-              <div className="p-8 space-y-6">
-                <div className="grid grid-cols-2 gap-6">
+              <div className="p-5 md:p-8 space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="text-sm font-bold text-slate-700">快递单号</label>
-                    <input
-                      required
-                      type="text"
-                      placeholder="扫描或录入单号"
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono"
-                      value={inboundForm.trackingNumber}
-                      onChange={e => setInboundForm({...inboundForm, trackingNumber: e.target.value})}
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        required
+                        type="text" // Changed to text to support external scanners or keyboard
+                        inputMode="numeric" // Hints numeric keyboard on mobile
+                        placeholder="扫描或输入"
+                        className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono text-lg"
+                        value={inboundForm.trackingNumber}
+                        onChange={e => setInboundForm({...inboundForm, trackingNumber: e.target.value})}
+                      />
+                      <button type="button" className="p-3 bg-slate-100 rounded-xl text-xl">📷</button>
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-bold text-slate-700">快递公司</label>
@@ -243,14 +278,14 @@ const App: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="text-sm font-bold text-slate-700">手机号码</label>
                     <input
                       required
                       type="tel"
-                      placeholder="收件人手机后四位或全号"
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                      placeholder="手机号后四位或全号"
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-lg"
                       value={inboundForm.recipientPhone}
                       onChange={e => setInboundForm({...inboundForm, recipientPhone: e.target.value})}
                     />
@@ -268,14 +303,14 @@ const App: React.FC = () => {
                 </div>
 
                 <div className="space-y-4">
-                  <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
-                    货架位置分配 <span className="text-blue-500 text-xs font-normal">系统已自动推荐空位</span>
+                  <label className="text-sm font-bold text-slate-700 flex flex-wrap items-center gap-2">
+                    货架位置 <span className="text-blue-500 text-xs font-normal bg-blue-50 px-2 py-0.5 rounded-full">系统推荐</span>
                   </label>
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-3 gap-3">
                     <div className="space-y-1">
                       <span className="text-[10px] text-slate-400 font-bold ml-1 uppercase">Zone</span>
                       <select 
-                        className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl"
+                        className="w-full px-2 md:px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-center font-bold"
                         value={inboundForm.shelfZone}
                         onChange={e => setInboundForm({...inboundForm, shelfZone: e.target.value})}
                       >
@@ -285,7 +320,7 @@ const App: React.FC = () => {
                     <div className="space-y-1">
                       <span className="text-[10px] text-slate-400 font-bold ml-1 uppercase">Row</span>
                       <select 
-                        className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl"
+                        className="w-full px-2 md:px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-center font-bold"
                         value={inboundForm.row}
                         onChange={e => setInboundForm({...inboundForm, row: e.target.value})}
                       >
@@ -295,21 +330,21 @@ const App: React.FC = () => {
                     <div className="space-y-1">
                       <span className="text-[10px] text-slate-400 font-bold ml-1 uppercase">Slot</span>
                       <select 
-                        className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl"
+                        className="w-full px-2 md:px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-center font-bold"
                         value={inboundForm.slot}
                         onChange={e => setInboundForm({...inboundForm, slot: e.target.value})}
                       >
-                        {SLOTS.map(s => <option key={s}>{s} 号位</option>)}
+                        {SLOTS.map(s => <option key={s}>{s} 号</option>)}
                       </select>
                     </div>
                   </div>
                 </div>
               </div>
-              <div className="p-8 bg-slate-50 border-t border-slate-100 flex justify-end gap-4">
-                <button type="button" className="px-6 py-3 text-slate-600 font-bold hover:bg-slate-200 rounded-xl transition-all">
-                  取消
+              <div className="p-5 md:p-8 bg-slate-50 border-t border-slate-100 flex gap-4 sticky bottom-0 z-10">
+                <button type="button" className="flex-1 md:flex-none px-6 py-3 text-slate-600 font-bold hover:bg-slate-200 rounded-xl transition-all">
+                  重置
                 </button>
-                <button type="submit" className="px-10 py-3 bg-blue-600 text-white font-bold rounded-xl shadow-lg shadow-blue-500/30 hover:bg-blue-700 active:scale-95 transition-all">
+                <button type="submit" className="flex-1 md:flex-none md:w-48 py-3 bg-blue-600 text-white font-bold rounded-xl shadow-lg shadow-blue-500/30 hover:bg-blue-700 active:scale-95 transition-all text-lg">
                   确认入库
                 </button>
               </div>
@@ -319,15 +354,51 @@ const App: React.FC = () => {
 
         {/* Outbound/Pickup List View */}
         {(activeTab === 'outbound' || activeTab === 'inventory') && (
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden animate-in fade-in duration-500">
-            <div className="p-6 border-b border-slate-50 bg-slate-50/50 flex justify-between items-center">
-               <div className="flex gap-4">
-                  <button className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold shadow-sm">批量操作</button>
-                  <button className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold shadow-sm">导出报表</button>
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden animate-in fade-in duration-500 pb-20">
+            <div className="p-4 md:p-6 border-b border-slate-50 bg-slate-50/50 flex flex-col sm:flex-row justify-between items-center gap-3">
+               <div className="flex w-full sm:w-auto gap-3">
+                  <button className="flex-1 sm:flex-none px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold shadow-sm">批量操作</button>
+                  <button className="flex-1 sm:flex-none px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold shadow-sm">导出</button>
                </div>
-               <div className="text-sm text-slate-500">共 {filteredPackages.length} 件符合条件</div>
+               <div className="text-sm text-slate-500">共 {filteredPackages.length} 件</div>
             </div>
-            <div className="overflow-x-auto">
+            
+            {/* Mobile Card View for Tables */}
+            <div className="block sm:hidden">
+              {filteredPackages.map(p => (
+                <div key={p.id} className="p-4 border-b border-slate-100 active:bg-slate-50">
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <span className="font-bold text-lg">{p.trackingNumber}</span>
+                      <p className="text-xs text-slate-500">{p.courierCompany}</p>
+                    </div>
+                    <span className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-mono font-bold rounded-full">{p.shelfLocation}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <div>
+                       <p className="text-sm font-medium">{p.recipientName} <span className="text-slate-400">|</span> {p.recipientPhone}</p>
+                       <p className="text-[10px] text-slate-400 mt-1">{new Date(p.inboundTime).toLocaleString()}</p>
+                    </div>
+                    {p.status === PackageStatus.ARRIVED ? (
+                      <button
+                        onClick={() => handlePickup(p.id)}
+                        className="px-5 py-2 bg-emerald-600 text-white text-sm font-bold rounded-lg shadow-lg shadow-emerald-500/20 active:scale-95 transition-transform"
+                      >
+                        出库
+                      </button>
+                    ) : (
+                      <span className="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded">已取走</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {filteredPackages.length === 0 && (
+                <div className="p-10 text-center text-slate-400">未找到结果</div>
+              )}
+            </div>
+
+            {/* Desktop Table View */}
+            <div className="hidden sm:block overflow-x-auto">
               <table className="w-full text-left">
                 <thead>
                   <tr className="bg-slate-50/50 text-slate-500 text-[10px] uppercase tracking-widest font-bold">
@@ -394,7 +465,7 @@ const App: React.FC = () => {
         )}
       </main>
 
-      {/* Quick Tools Panel */}
+      {/* Quick Tools Panel - Hidden on mobile, visible on XL screens */}
       <aside className="w-80 bg-white border-l border-slate-200 p-6 space-y-8 hidden xl:block">
         <div>
           <h4 className="font-bold text-slate-800 mb-4">库位概览</h4>
