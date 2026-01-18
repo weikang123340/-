@@ -1,5 +1,7 @@
 {
-  "name": "Connect Master: Multi-Theme Challenge",
-  "description": "A professional-grade Lianliankan (Connect-Two) game featuring diverse themes like SOEs, Sports, Fruits, Cars, and Weapons. Built with React, Tailwind, and Gemini-powered victory messages.",
-  "requestFramePermissions": []
+  "name": "Express Station Pro",
+  "description": "A high-efficiency inbound and outbound logistics management system for express stations with AI-powered analytics.",
+  "requestFramePermissions": [
+    "camera"
+  ]
 }

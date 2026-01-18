@@ -1,258 +1,443 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Category, GameState, Position } from './types';
-import { INITIAL_TIME, THEMES } from './constants';
-import { createShuffledBoard, canConnect, hasMoves, shuffleRemaining } from './utils/gameLogic';
-import Board from './components/Board';
-import { getVictoryMessage } from './services/geminiService';
+
+import React, { useState, useEffect, useMemo } from 'react';
+import { Package, PackageStatus, StationStats } from './types';
+import { COURIER_COMPANIES, SHELF_ZONES, ROWS, SLOTS } from './constants';
+import { analyzeStationData } from './services/geminiService';
 
 const App: React.FC = () => {
-  const [state, setState] = useState<GameState>({
-    grid: createShuffledBoard([]),
-    selected: null,
-    score: 0,
-    timeLeft: INITIAL_TIME,
-    isGameOver: false,
-    isVictory: false,
-    level: 1,
-    message: '',
-    path: [],
+  const [packages, setPackages] = useState<Package[]>([]);
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'inbound' | 'outbound' | 'inventory'>('dashboard');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [aiAnalysis, setAiAnalysis] = useState('加载AI经营建议...');
+  
+  // Form States
+  const [inboundForm, setInboundForm] = useState({
+    trackingNumber: '',
+    recipientPhone: '',
+    recipientName: '',
+    courierCompany: COURIER_COMPANIES[0],
+    shelfZone: SHELF_ZONES[0],
+    row: '1',
+    slot: '1'
   });
 
-  // Fixed: Use ReturnType<typeof setInterval> instead of NodeJS.Timeout to avoid namespace errors in browser environments
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const startNewGame = (level = 1, score = 0) => {
-    setState({
-      grid: createShuffledBoard([]),
-      selected: null,
-      score,
-      timeLeft: Math.max(30, INITIAL_TIME - (level - 1) * 10),
-      isGameOver: false,
-      isVictory: false,
-      level,
-      message: '',
-      path: [],
-    });
-  };
-
-  useEffect(() => {
-    if (state.timeLeft > 0 && !state.isGameOver && !state.isVictory) {
-      timerRef.current = setInterval(() => {
-        setState(prev => {
-          if (prev.timeLeft <= 1) {
-            return { ...prev, timeLeft: 0, isGameOver: true };
-          }
-          return { ...prev, timeLeft: prev.timeLeft - 1 };
-        });
-      }, 1000);
-    }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+  // Derived Stats
+  const stats = useMemo((): StationStats => {
+    const today = new Date().setHours(0,0,0,0);
+    const inboundToday = packages.filter(p => p.inboundTime >= today).length;
+    const pending = packages.filter(p => p.status === PackageStatus.ARRIVED).length;
+    const delivered = packages.filter(p => p.status === PackageStatus.PICKED_UP && (p.outboundTime || 0) >= today).length;
+    return {
+      totalInboundToday: inboundToday,
+      pendingPickup: pending,
+      deliveredToday: delivered,
+      shelfUtilization: Math.round((pending / (SHELF_ZONES.length * ROWS.length * SLOTS.length)) * 100)
     };
-  }, [state.isGameOver, state.isVictory]);
+  }, [packages]);
 
-  const handleTileClick = useCallback((x: number, y: number) => {
-    if (state.isGameOver || state.isVictory) return;
+  // Load AI Analysis
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      const analysis = await analyzeStationData(packages);
+      setAiAnalysis(analysis);
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [packages.length]);
 
-    setState(prev => {
-      if (!prev.selected) {
-        return { ...prev, selected: { x, y } };
-      }
+  const handleInbound = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inboundForm.trackingNumber || !inboundForm.recipientPhone) return;
 
-      // Check if clicking the same tile
-      if (prev.selected.x === x && prev.selected.y === y) {
-        return { ...prev, selected: null };
-      }
+    const newPackage: Package = {
+      id: Math.random().toString(36).substr(2, 9),
+      trackingNumber: inboundForm.trackingNumber,
+      recipientName: inboundForm.recipientName || '收件人',
+      recipientPhone: inboundForm.recipientPhone,
+      shelfLocation: `${inboundForm.shelfZone}-${inboundForm.row}-${inboundForm.slot}`,
+      inboundTime: Date.now(),
+      status: PackageStatus.ARRIVED,
+      courierCompany: inboundForm.courierCompany
+    };
 
-      const connectionPath = canConnect(prev.grid, prev.selected, { x, y });
-
-      if (connectionPath) {
-        const newGrid = prev.grid.map(row => [...row]);
-        newGrid[prev.selected.y][prev.selected.x] = null;
-        newGrid[y][x] = null;
-
-        const points = 100 + Math.floor(prev.timeLeft / 2);
-        const newScore = prev.score + points;
-
-        // Check if level cleared
-        const remaining = newGrid.flat().filter(t => t !== null).length;
-        if (remaining === 0) {
-          (async () => {
-             const victoryMsg = await getVictoryMessage(newScore, prev.level);
-             setState(s => ({ ...s, isVictory: true, message: victoryMsg }));
-          })();
-          return { ...prev, grid: newGrid, score: newScore, path: connectionPath, selected: null };
-        }
-
-        // Check for deadlocks
-        let nextGrid = newGrid;
-        if (!hasMoves(newGrid)) {
-           nextGrid = shuffleRemaining(newGrid);
-        }
-
-        // Clear path after a short delay
-        setTimeout(() => setState(s => ({ ...s, path: [] })), 300);
-
-        return {
-          ...prev,
-          grid: nextGrid,
-          score: newScore,
-          selected: null,
-          path: connectionPath,
-        };
-      }
-
-      return { ...prev, selected: { x, y } };
-    });
-  }, [state.isGameOver, state.isVictory, state.selected]);
-
-  const handleHint = () => {
-    const tiles: { pos: Position; type: string }[] = [];
-    for (let y = 0; y < state.grid.length; y++) {
-      for (let x = 0; x < state.grid[0].length; x++) {
-        if (state.grid[y][x]) tiles.push({ pos: { x, y }, type: state.grid[y][x]!.type });
-      }
-    }
-
-    for (let i = 0; i < tiles.length; i++) {
-      for (let j = i + 1; j < tiles.length; j++) {
-        if (tiles[i].type === tiles[j].type) {
-          const path = canConnect(state.grid, tiles[i].pos, tiles[j].pos);
-          if (path) {
-            setState(prev => ({ ...prev, selected: tiles[i].pos }));
-            setTimeout(() => setState(prev => ({ ...prev, path })), 200);
-            setTimeout(() => setState(prev => ({ ...prev, path: [], selected: null })), 800);
-            return;
-          }
-        }
-      }
-    }
+    setPackages([newPackage, ...packages]);
+    setInboundForm({ ...inboundForm, trackingNumber: '', recipientPhone: '', recipientName: '' });
+    alert('入库成功！位置: ' + newPackage.shelfLocation);
   };
 
-  const handleShuffle = () => {
-    setState(prev => ({
-      ...prev,
-      grid: shuffleRemaining(prev.grid),
-      selected: null,
-      score: Math.max(0, prev.score - 50)
-    }));
+  const handlePickup = (id: string) => {
+    setPackages(packages.map(p => 
+      p.id === id ? { ...p, status: PackageStatus.PICKED_UP, outboundTime: Date.now() } : p
+    ));
   };
+
+  const filteredPackages = packages.filter(p => 
+    p.trackingNumber.includes(searchQuery) || 
+    p.recipientPhone.includes(searchQuery) ||
+    p.recipientName.includes(searchQuery)
+  );
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center p-4">
-      {/* Header */}
-      <div className="w-full max-w-4xl flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
-        <div>
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-transparent">
-            Connect Master
-          </h1>
-          <p className="text-slate-400 text-sm">Level {state.level} • Connect matching pairs!</p>
+    <div className="flex h-screen bg-slate-50 overflow-hidden font-sans text-slate-900">
+      {/* Sidebar */}
+      <nav className="w-64 bg-slate-900 text-white flex flex-col shadow-xl">
+        <div className="p-6 border-b border-slate-800">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center font-bold text-xl">
+              EP
+            </div>
+            <div>
+              <h1 className="font-bold text-lg leading-tight">站点管理 Pro</h1>
+              <span className="text-slate-500 text-xs">Express Station</span>
+            </div>
+          </div>
         </div>
-        
-        <div className="flex gap-4 items-center bg-slate-900/50 p-3 rounded-xl border border-slate-800">
-          <div className="text-center">
-            <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Time</p>
-            <p className={`text-xl font-mono ${state.timeLeft < 20 ? 'text-red-500 animate-pulse' : 'text-blue-400'}`}>
-              {Math.floor(state.timeLeft / 60)}:{(state.timeLeft % 60).toString().padStart(2, '0')}
+        <div className="flex-1 py-6 space-y-1">
+          {[
+            { id: 'dashboard', label: '工作台', icon: '📊' },
+            { id: 'inbound', label: '扫码入库', icon: '📥' },
+            { id: 'outbound', label: '查询出库', icon: '📤' },
+            { id: 'inventory', label: '库存明细', icon: '📦' }
+          ].map(item => (
+            <button
+              key={item.id}
+              onClick={() => setActiveTab(item.id as any)}
+              className={`w-full flex items-center gap-4 px-6 py-4 text-left transition-colors ${
+                activeTab === item.id ? 'bg-blue-600 text-white border-r-4 border-white' : 'text-slate-400 hover:bg-slate-800'
+              }`}
+            >
+              <span>{item.icon}</span>
+              <span className="font-medium">{item.label}</span>
+            </button>
+          ))}
+        </div>
+        <div className="p-6 border-t border-slate-800">
+          <div className="bg-slate-800/50 rounded-lg p-3">
+            <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-1">Station ID</p>
+            <p className="text-sm font-mono text-blue-400">#ST_PUXI_0821</p>
+          </div>
+        </div>
+      </nav>
+
+      {/* Main Content */}
+      <main className="flex-1 overflow-y-auto p-8">
+        <header className="flex justify-between items-center mb-8">
+          <div>
+            <h2 className="text-2xl font-bold">
+              {activeTab === 'dashboard' && '数字化大屏'}
+              {activeTab === 'inbound' && '快件入库登记'}
+              {activeTab === 'outbound' && '快件出库受理'}
+              {activeTab === 'inventory' && '实时库存管理'}
+            </h2>
+            <p className="text-slate-500 text-sm mt-1">
+              {new Date().toLocaleDateString('zh-CN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
             </p>
           </div>
-          <div className="w-px h-8 bg-slate-800" />
-          <div className="text-center">
-            <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Score</p>
-            <p className="text-xl font-mono text-emerald-400">{state.score}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Game Area */}
-      <div className="w-full max-w-5xl flex-1 flex flex-col justify-center">
-        <Board
-          grid={state.grid}
-          selected={state.selected}
-          path={state.path}
-          onTileClick={handleTileClick}
-        />
-      </div>
-
-      {/* Footer Controls */}
-      <div className="w-full max-w-4xl mt-6 flex justify-center gap-4">
-        <button
-          onClick={handleHint}
-          disabled={state.isGameOver || state.isVictory}
-          className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-semibold transition-all border border-slate-700 flex items-center justify-center gap-2"
-        >
-          💡 提示 (Hint)
-        </button>
-        <button
-          onClick={handleShuffle}
-          disabled={state.isGameOver || state.isVictory}
-          className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-semibold transition-all border border-slate-700 flex items-center justify-center gap-2"
-        >
-          🔀 重排 (Shuffle)
-        </button>
-        <button
-          onClick={() => startNewGame()}
-          className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-semibold transition-all shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2"
-        >
-          🔄 重新开始
-        </button>
-      </div>
-
-      {/* Modals */}
-      {(state.isGameOver || state.isVictory) && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 max-w-md w-full shadow-2xl text-center transform animate-in fade-in zoom-in duration-300">
-            {state.isVictory ? (
-              <>
-                <div className="text-6xl mb-4">🏆</div>
-                <h2 className="text-3xl font-bold text-emerald-400 mb-2">通关大捷!</h2>
-                <p className="text-slate-300 mb-6 italic">"{state.message || '正在获取成就点评...'}"</p>
-                <div className="space-y-4">
-                  <button
-                    onClick={() => startNewGame(state.level + 1, state.score)}
-                    className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-bold text-lg transition-all shadow-lg shadow-emerald-500/20"
-                  >
-                    挑战下一关
-                  </button>
-                  <button
-                    onClick={() => startNewGame(1, 0)}
-                    className="w-full py-2 text-slate-400 hover:text-white"
-                  >
-                    回第一关
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="text-6xl mb-4">⌛</div>
-                <h2 className="text-3xl font-bold text-red-400 mb-2">时间到!</h2>
-                <p className="text-slate-400 mb-6">不要灰心，再来一次试试？</p>
-                <p className="text-slate-300 mb-6">最终得分: <span className="text-emerald-400 font-bold">{state.score}</span></p>
-                <button
-                  onClick={() => startNewGame(state.level, 0)}
-                  className="w-full py-4 bg-red-600 hover:bg-red-500 rounded-xl font-bold text-lg transition-all shadow-lg shadow-red-500/20"
-                >
-                  重试本关
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Theme Indicators */}
-      <div className="hidden lg:flex fixed left-8 top-1/2 -translate-y-1/2 flex-col gap-4">
-        {Object.entries(THEMES).map(([cat, theme]) => (
-          <div key={cat} className="group relative flex items-center gap-2">
-            <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700 group-hover:bg-blue-600 transition-colors">
-              {theme.items[0].icon}
+          <div className="flex items-center gap-4">
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="搜索单号/手机/姓名"
+                className="pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-full text-sm w-64 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              <span className="absolute left-3 top-2.5 text-slate-400">🔍</span>
             </div>
-            <span className="absolute left-12 px-2 py-1 bg-slate-800 rounded text-xs opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-              {theme.label}
-            </span>
+            <button className="p-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors">
+              🔔
+            </button>
+            <div className="w-10 h-10 rounded-full bg-blue-100 border-2 border-white overflow-hidden">
+              <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Manager" alt="Avatar" />
+            </div>
           </div>
-        ))}
-      </div>
+        </header>
+
+        {/* Dashboard View */}
+        {activeTab === 'dashboard' && (
+          <div className="space-y-8 animate-in fade-in duration-500">
+            {/* Stats Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {[
+                { label: '今日入库', value: stats.totalInboundToday, sub: '较昨日 +12%', color: 'text-blue-600', bg: 'bg-blue-50' },
+                { label: '待取快件', value: stats.pendingPickup, sub: '占库容 ' + stats.shelfUtilization + '%', color: 'text-orange-600', bg: 'bg-orange-50' },
+                { label: '今日出库', value: stats.deliveredToday, sub: '签收率 ' + (stats.totalInboundToday > 0 ? Math.round((stats.deliveredToday / stats.totalInboundToday) * 100) : 0) + '%', color: 'text-emerald-600', bg: 'bg-emerald-50' },
+                { label: '站点状态', value: '正常', sub: '环境温度 24°C', color: 'text-indigo-600', bg: 'bg-indigo-50' }
+              ].map((card, i) => (
+                <div key={i} className={`${card.bg} p-6 rounded-2xl border border-white shadow-sm`}>
+                  <p className="text-slate-500 text-sm font-medium">{card.label}</p>
+                  <p className={`text-3xl font-bold mt-2 ${card.color}`}>{card.value}</p>
+                  <p className="text-xs text-slate-400 mt-2 font-medium">{card.sub}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* AI Insights */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-xl">✨</span>
+                <h3 className="font-bold text-slate-800">AI 智能经营分析</h3>
+              </div>
+              <div className="bg-blue-50/50 p-4 rounded-xl text-blue-800 text-sm leading-relaxed">
+                {aiAnalysis}
+              </div>
+            </div>
+
+            {/* Recent Activity */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+              <div className="p-6 border-b border-slate-50 flex justify-between items-center">
+                <h3 className="font-bold">最新动态</h3>
+                <button className="text-blue-600 text-sm font-medium">查看全部</button>
+              </div>
+              <div className="divide-y divide-slate-50">
+                {packages.slice(0, 5).map(p => (
+                  <div key={p.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                    <div className="flex items-center gap-4">
+                      <div className={`w-2 h-2 rounded-full ${p.status === PackageStatus.ARRIVED ? 'bg-orange-400' : 'bg-emerald-400'}`} />
+                      <div>
+                        <p className="text-sm font-bold">{p.trackingNumber}</p>
+                        <p className="text-xs text-slate-500">{p.courierCompany} · {p.recipientName}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs font-mono bg-slate-100 px-2 py-1 rounded">{p.shelfLocation}</p>
+                      <p className="text-[10px] text-slate-400 mt-1">{new Date(p.inboundTime).toLocaleTimeString()}</p>
+                    </div>
+                  </div>
+                ))}
+                {packages.length === 0 && (
+                  <div className="p-12 text-center text-slate-400">
+                    <p>暂无快件动态</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Inbound Form View */}
+        {activeTab === 'inbound' && (
+          <div className="max-w-4xl animate-in slide-in-from-bottom-4 duration-500">
+            <form onSubmit={handleInbound} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+              <div className="p-8 space-y-6">
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700">快递单号</label>
+                    <input
+                      required
+                      type="text"
+                      placeholder="扫描或录入单号"
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono"
+                      value={inboundForm.trackingNumber}
+                      onChange={e => setInboundForm({...inboundForm, trackingNumber: e.target.value})}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700">快递公司</label>
+                    <select
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                      value={inboundForm.courierCompany}
+                      onChange={e => setInboundForm({...inboundForm, courierCompany: e.target.value})}
+                    >
+                      {COURIER_COMPANIES.map(c => <option key={c}>{c}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700">手机号码</label>
+                    <input
+                      required
+                      type="tel"
+                      placeholder="收件人手机后四位或全号"
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                      value={inboundForm.recipientPhone}
+                      onChange={e => setInboundForm({...inboundForm, recipientPhone: e.target.value})}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700">收件人姓名 (可选)</label>
+                    <input
+                      type="text"
+                      placeholder="姓名"
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                      value={inboundForm.recipientName}
+                      onChange={e => setInboundForm({...inboundForm, recipientName: e.target.value})}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                    货架位置分配 <span className="text-blue-500 text-xs font-normal">系统已自动推荐空位</span>
+                  </label>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-1">
+                      <span className="text-[10px] text-slate-400 font-bold ml-1 uppercase">Zone</span>
+                      <select 
+                        className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl"
+                        value={inboundForm.shelfZone}
+                        onChange={e => setInboundForm({...inboundForm, shelfZone: e.target.value})}
+                      >
+                        {SHELF_ZONES.map(z => <option key={z}>{z}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[10px] text-slate-400 font-bold ml-1 uppercase">Row</span>
+                      <select 
+                        className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl"
+                        value={inboundForm.row}
+                        onChange={e => setInboundForm({...inboundForm, row: e.target.value})}
+                      >
+                        {ROWS.map(r => <option key={r}>{r} 层</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[10px] text-slate-400 font-bold ml-1 uppercase">Slot</span>
+                      <select 
+                        className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl"
+                        value={inboundForm.slot}
+                        onChange={e => setInboundForm({...inboundForm, slot: e.target.value})}
+                      >
+                        {SLOTS.map(s => <option key={s}>{s} 号位</option>)}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="p-8 bg-slate-50 border-t border-slate-100 flex justify-end gap-4">
+                <button type="button" className="px-6 py-3 text-slate-600 font-bold hover:bg-slate-200 rounded-xl transition-all">
+                  取消
+                </button>
+                <button type="submit" className="px-10 py-3 bg-blue-600 text-white font-bold rounded-xl shadow-lg shadow-blue-500/30 hover:bg-blue-700 active:scale-95 transition-all">
+                  确认入库
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* Outbound/Pickup List View */}
+        {(activeTab === 'outbound' || activeTab === 'inventory') && (
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden animate-in fade-in duration-500">
+            <div className="p-6 border-b border-slate-50 bg-slate-50/50 flex justify-between items-center">
+               <div className="flex gap-4">
+                  <button className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold shadow-sm">批量操作</button>
+                  <button className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold shadow-sm">导出报表</button>
+               </div>
+               <div className="text-sm text-slate-500">共 {filteredPackages.length} 件符合条件</div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="bg-slate-50/50 text-slate-500 text-[10px] uppercase tracking-widest font-bold">
+                    <th className="px-6 py-4">快件详情</th>
+                    <th className="px-6 py-4">收件人</th>
+                    <th className="px-6 py-4">存放位置</th>
+                    <th className="px-6 py-4">入库时间</th>
+                    <th className="px-6 py-4">状态</th>
+                    <th className="px-6 py-4 text-right">操作</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {filteredPackages.map(p => (
+                    <tr key={p.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-6 py-4">
+                        <p className="text-sm font-bold font-mono">{p.trackingNumber}</p>
+                        <p className="text-xs text-slate-500">{p.courierCompany}</p>
+                      </td>
+                      <td className="px-6 py-4">
+                        <p className="text-sm font-bold">{p.recipientName}</p>
+                        <p className="text-xs text-slate-500">{p.recipientPhone}</p>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-mono font-bold rounded-full border border-blue-200">
+                          {p.shelfLocation}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-xs text-slate-500">
+                        {new Date(p.inboundTime).toLocaleString()}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${
+                          p.status === PackageStatus.ARRIVED ? 'bg-orange-100 text-orange-600' : 'bg-emerald-100 text-emerald-600'
+                        }`}>
+                          {p.status === PackageStatus.ARRIVED ? '待取件' : '已签收'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        {p.status === PackageStatus.ARRIVED ? (
+                          <button
+                            onClick={() => handlePickup(p.id)}
+                            className="px-4 py-1 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700 transition-colors"
+                          >
+                            确认出库
+                          </button>
+                        ) : (
+                          <span className="text-xs text-slate-400">已于 {p.outboundTime && new Date(p.outboundTime).toLocaleTimeString()} 领取</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {filteredPackages.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-20 text-center text-slate-400">
+                        <div className="text-4xl mb-2">🔎</div>
+                        <p>未找到匹配的快件</p>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* Quick Tools Panel */}
+      <aside className="w-80 bg-white border-l border-slate-200 p-6 space-y-8 hidden xl:block">
+        <div>
+          <h4 className="font-bold text-slate-800 mb-4">库位概览</h4>
+          <div className="grid grid-cols-4 gap-2">
+            {SHELF_ZONES.map(z => (
+              <div key={z} className="group relative">
+                <div className={`aspect-square rounded-lg flex flex-col items-center justify-center border transition-all ${
+                  z === 'A' ? 'bg-blue-600 text-white border-blue-700' : 'bg-slate-100 text-slate-400 border-slate-200'
+                }`}>
+                  <span className="text-xs font-bold">{z}</span>
+                  <span className="text-[8px] opacity-70">85%</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <button className="w-full mt-4 py-2 text-blue-600 text-xs font-bold hover:bg-blue-50 rounded-lg transition-all">
+            整理库位建议
+          </button>
+        </div>
+
+        <div className="p-4 bg-slate-900 rounded-2xl text-white">
+          <h4 className="font-bold mb-2">通知公告</h4>
+          <div className="space-y-3">
+            <div className="p-2 bg-slate-800 rounded-lg border-l-2 border-orange-500">
+              <p className="text-[10px] font-bold">⚠️ 今日揽收截止</p>
+              <p className="text-[8px] text-slate-400 mt-1">顺丰揽收截止时间调整为 18:30，请合理安排。</p>
+            </div>
+            <div className="p-2 bg-slate-800 rounded-lg border-l-2 border-blue-500">
+              <p className="text-[10px] font-bold">📢 系统更新</p>
+              <p className="text-[8px] text-slate-400 mt-1">AI 经营分析模型已更新，支持更多公司统计。</p>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <h4 className="font-bold text-slate-800 mb-4">快捷操作</h4>
+          <div className="space-y-2">
+            <button className="w-full py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium hover:border-blue-300 transition-all text-left px-4">🖨️ 打印取件凭条</button>
+            <button className="w-full py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium hover:border-blue-300 transition-all text-left px-4">📲 一键短信通知</button>
+            <button className="w-full py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium hover:border-blue-300 transition-all text-left px-4">📷 异常件拍照</button>
+          </div>
+        </div>
+      </aside>
     </div>
   );
 };
